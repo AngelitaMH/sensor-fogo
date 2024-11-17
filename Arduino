@@ -1,0 +1,89 @@
+#include <ESP8266WiFi.h>
+#include <Adafruit_MQTT.h>
+#include <Adafruit_MQTT_Client.h>
+
+#define sensorIncendio D1  
+#define buzzerPin D7  // Definir o pino do buzzer
+
+const char* redeWiFi = "LIVE TIM_OCA4_2G";
+const char* senhaWiFi = "2fmjpgtbxn";
+
+#define SERVIDOR_AIO      "io.adafruit.com"
+#define PORTA_AIO         1883                  
+#define USUARIO_AIO       "angelita_87"
+#define CHAVE_AIO         "aio_fFNh2533k5lK3xNMulMgsuOnXHL2"
+
+WiFiClient clienteWiFi;
+Adafruit_MQTT_Client clienteMQTT(&clienteWiFi, SERVIDOR_AIO, PORTA_AIO, USUARIO_AIO, CHAVE_AIO);
+Adafruit_MQTT_Publish publicacaoStatusIncendio = Adafruit_MQTT_Publish(&clienteMQTT, USUARIO_AIO "/feeds/alerta");
+
+unsigned long tempoUltimaPublicacao = 0;
+unsigned long tempoUltimoAlarme = 0;
+
+const unsigned long intervaloPublicacaoNormal = 5000;
+const unsigned long intervaloPublicacaoAlarme = 2000;
+
+void conectarMQTT() {
+  int8_t estado;
+
+  while ((estado = clienteMQTT.connect()) != 0) {
+    clienteMQTT.disconnect();
+    delay(5000);
+  }
+}
+
+void verificarSensor() {
+  int statusIncendio = digitalRead(sensorIncendio);
+
+  if (statusIncendio == LOW) {  // Incêndio detectado
+    digitalWrite(buzzerPin, HIGH);  // Ligar o buzzer
+    if (millis() - tempoUltimoAlarme >= intervaloPublicacaoAlarme) {
+      Serial.println("Incêndio detectado!");
+      publicacaoStatusIncendio.publish("Incêndio detectado!");
+      tempoUltimoAlarme = millis();
+    }
+  } else {  // Nenhum incêndio
+    digitalWrite(buzzerPin, LOW);  // Desligar o buzzer
+    if (millis() - tempoUltimaPublicacao >= intervaloPublicacaoNormal) {
+      Serial.println("Nenhum incêndio identificado.");
+      publicacaoStatusIncendio.publish("Nenhum incêndio identificado.");
+      tempoUltimaPublicacao = millis();
+      tempoUltimoAlarme = 0;
+    }
+  }
+}
+
+void conectarWiFi() {
+  Serial.print("Tentando conectar ao Wi-Fi");
+  WiFi.begin(redeWiFi, senhaWiFi);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.println("Conexão Wi-Fi estabelecida!");
+  Serial.print("Endereço IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  conectarWiFi();
+  conectarMQTT();
+
+  pinMode(sensorIncendio, INPUT);
+  pinMode(buzzerPin, OUTPUT);  // Configurar o pino do buzzer como saída
+  digitalWrite(buzzerPin, LOW); // Inicialmente, o buzzer está desligado
+  
+  verificarSensor();
+}
+
+void loop() {
+  if (!clienteMQTT.connected()) {
+    conectarMQTT();
+  }
+
+  clienteMQTT.ping();
+  verificarSensor();
+}
