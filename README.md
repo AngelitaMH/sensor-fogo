@@ -1,2 +1,2 @@
-# sensor-fogo
+# sensor-fumaça
 Arduino
